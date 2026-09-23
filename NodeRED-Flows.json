@@ -1,0 +1,1000 @@
+[
+    {
+        "id": "2bf9e411eebbc2c3",
+        "type": "tab",
+        "label": "IoT Dashboard",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "7ba3f08e3e2f72ab",
+        "type": "mqtt in",
+        "z": "2bf9e411eebbc2c3",
+        "name": "From Pi (Python)",
+        "topic": "sapura/bilik1/data",
+        "qos": "0",
+        "datatype": "json",
+        "broker": "f7c9eba65970f8fc",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 140,
+        "y": 340,
+        "wires": [
+            [
+                "2cfd2c8f881cbbf1",
+                "4ad180cf612fd92f",
+                "f839b66a32a78c12"
+            ]
+        ]
+    },
+    {
+        "id": "2cfd2c8f881cbbf1",
+        "type": "function",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Split JSON Data",
+        "func": "// Parse JSON jika ia masih dalam bentuk string\nlet data = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;\n\n// Sediakan 3 mesej berasingan dengan TOPIK ASAL supaya flow lama tak terganggu\nlet msgTemp = { payload: data.temperature, topic: \"sapura/bilik1/temperature\" };\nlet msgHum = { payload: data.humidity, topic: \"sapura/bilik1/humidity\" };\nlet msgLight = { payload: data.light_density, topic: \"sapura/bilik1/ldr\" };\n\n// Pecahkan kepada 3 port output\nreturn [msgTemp, msgHum, msgLight];",
+        "outputs": 3,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 340,
+        "y": 340,
+        "wires": [
+            [
+                "combined_logic_node",
+                "combined_notification_node"
+            ],
+            [],
+            [
+                "d0aa09bc64ac4035"
+            ]
+        ]
+    },
+    {
+        "id": "03b2a422b9512519",
+        "type": "rpi-gpio out",
+        "z": "2bf9e411eebbc2c3",
+        "name": "GPIO22 Orange LED (Blinking)",
+        "pin": "22",
+        "set": "",
+        "level": "0",
+        "freq": "",
+        "out": "out",
+        "bcm": true,
+        "x": 1050,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "7195150df56b7be3",
+        "type": "rpi-gpio out",
+        "z": "2bf9e411eebbc2c3",
+        "name": "GPIO27 Red LED (Static)",
+        "pin": "27",
+        "set": "",
+        "level": "0",
+        "freq": "",
+        "out": "out",
+        "bcm": true,
+        "x": 1030,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "0bea7c5b3adc09af",
+        "type": "rpi-gpio out",
+        "z": "2bf9e411eebbc2c3",
+        "name": "GPIO17 Green LED (Blinking)",
+        "pin": "17",
+        "set": "",
+        "level": "0",
+        "freq": "",
+        "out": "out",
+        "bcm": true,
+        "x": 1050,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "3ab181f92806d027",
+        "type": "rpi-gpio in",
+        "z": "2bf9e411eebbc2c3",
+        "name": "GPIO25 Physical Interrupt",
+        "pin": "25",
+        "intype": "up",
+        "debounce": "25",
+        "read": true,
+        "bcm": true,
+        "x": 490,
+        "y": 180,
+        "wires": [
+            [
+                "5594537a9ff8789a",
+                "combined_logic_node"
+            ]
+        ]
+    },
+    {
+        "id": "d0aa09bc64ac4035",
+        "type": "function",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Brightness Logic",
+        "func": "let overrideState = context.get('overrideLight') || 0;\n// 1. Panggil memori bacaan LDR (PWM) yang terakhir\nlet lastPwmValue = context.get('lastPwm') || 0;\n\nif (msg.topic === \"sapura/bilik1/switch/light\") {\n\n    overrideState = parseInt(msg.payload);\n    context.set('overrideLight', overrideState);\n\n    if (overrideState === 1) {\n        return { payload: 100 };\n    } else {\n        // 2. Bila suis ditekan OFF, serta-merta hantar memori PWM terakhir ke lampu!\n        return { payload: lastPwmValue };\n    }\n\n} else {\n\n    // --- KIRAAN LDR ---\n    let ldr_ms = parseFloat(msg.payload);\n    let min_ms = 35;\n    let max_ms = 3000;\n\n    if (ldr_ms < min_ms) ldr_ms = min_ms;\n    if (ldr_ms > max_ms) ldr_ms = max_ms;\n\n    let pwm_value = ((ldr_ms - min_ms) / (max_ms - min_ms)) * 100;\n    pwm_value = Math.round(pwm_value);\n\n    // 3. Sentiasa kemas kini memori lastPwm supaya kita tak ketinggalan bacaan terbaru\n    context.set('lastPwm', pwm_value);\n\n    // 4. Tapisan Akhir: Hantar atau tak?\n    if (overrideState === 1) {\n        // Kalau manual sedang ON, kita cuma simpan memori tadi dalam diam. Jangan hantar ke lampu.\n        return null;\n    } else {\n        // Kalau Auto (Manual OFF), hantar bacaan seperti biasa\n        msg.payload = pwm_value;\n        return msg;\n    }\n}",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 590,
+        "y": 380,
+        "wires": [
+            [
+                "b9506871eb4cfc59"
+            ]
+        ]
+    },
+    {
+        "id": "b9506871eb4cfc59",
+        "type": "rpi-gpio out",
+        "z": "2bf9e411eebbc2c3",
+        "name": "GPIO12 Orange LED (PWM)",
+        "pin": "12",
+        "set": "",
+        "level": "0",
+        "freq": "",
+        "out": "pwm",
+        "bcm": true,
+        "x": 840,
+        "y": 380,
+        "wires": []
+    },
+    {
+        "id": "ed5b9eca5f7443fa",
+        "type": "mqtt in",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Fan switch from Dashboard",
+        "topic": "sapura/bilik1/switch/fan",
+        "qos": "0",
+        "datatype": "auto-detect",
+        "broker": "f7c9eba65970f8fc",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 480,
+        "y": 100,
+        "wires": [
+            [
+                "4492bf68fd258ea8"
+            ]
+        ]
+    },
+    {
+        "id": "4492bf68fd258ea8",
+        "type": "debug",
+        "z": "2bf9e411eebbc2c3",
+        "name": "fan",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 730,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "44cf189a866d0585",
+        "type": "mqtt in",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Interrupt Switch from Dashboard",
+        "topic": "sapura/bilik1/switch/interrupt",
+        "qos": "0",
+        "datatype": "auto-detect",
+        "broker": "f7c9eba65970f8fc",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 470,
+        "y": 140,
+        "wires": [
+            [
+                "combined_logic_node"
+            ]
+        ]
+    },
+    {
+        "id": "4ad180cf612fd92f",
+        "type": "influxdb out",
+        "z": "2bf9e411eebbc2c3",
+        "influxdb": "b32bd92e0bc6e902",
+        "name": "",
+        "measurement": "Bilik_1",
+        "precision": "",
+        "retentionPolicy": "",
+        "database": "database",
+        "precisionV18FluxV20": "ms",
+        "retentionPolicyV18Flux": "",
+        "org": "Project IoT Sapura",
+        "bucket": "Collection_Data_Sensor_2",
+        "x": 360,
+        "y": 380,
+        "wires": []
+    },
+    {
+        "id": "f839b66a32a78c12",
+        "type": "debug",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Bilik 1",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 310,
+        "y": 300,
+        "wires": []
+    },
+    {
+        "id": "a1926e829bcd9873",
+        "type": "mqtt in",
+        "z": "2bf9e411eebbc2c3",
+        "name": "",
+        "topic": "sapura/bilik1/switch/light",
+        "qos": "0",
+        "datatype": "auto-detect",
+        "broker": "f7c9eba65970f8fc",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 330,
+        "y": 420,
+        "wires": [
+            [
+                "d0aa09bc64ac4035"
+            ]
+        ]
+    },
+    {
+        "id": "6f68dc6866c0d24e",
+        "type": "inject",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Trigger (10 Saat)",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "10",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 370,
+        "y": 540,
+        "wires": [
+            [
+                "c4c22c8864364eee"
+            ]
+        ]
+    },
+    {
+        "id": "c4c22c8864364eee",
+        "type": "function",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Random JSON2",
+        "func": "const minTemp = 24.0;\nconst maxTemp = 26.0;\nconst minHum = 40.0;\nconst maxHum = 45.0;\nconst minLight = 50.0;\nconst maxLight = 60.0;\n\nlet temperature = (Math.random() * (maxTemp - minTemp) + minTemp).toFixed(2);\nlet humidity = (Math.random() * (maxHum - minHum) + minHum).toFixed(2);\nlet lightDensity = (Math.random() * (maxLight - minLight) + minLight).toFixed(2);\n\n// Penting: Kita guna parseFloat() supaya data dihantar sebagai nombor (Float),\n// dan bukannya tulisan (String). InfluxDB sangat sensitif tentang jenis data.\nlet sensorData = {\n    temperature: parseFloat(temperature),\n    humidity: parseFloat(humidity),\n    light_density: parseFloat(lightDensity)\n};\n\n// Node MQTT akan automatik tukarkan objek ini ke JSON String\nreturn { payload: sensorData };",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 580,
+        "y": 540,
+        "wires": [
+            [
+                "17168beb18491cc1"
+            ]
+        ]
+    },
+    {
+        "id": "17168beb18491cc1",
+        "type": "mqtt out",
+        "z": "2bf9e411eebbc2c3",
+        "name": "",
+        "topic": "sapura/bilik2/data",
+        "qos": "0",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "f7c9eba65970f8fc",
+        "x": 830,
+        "y": 540,
+        "wires": []
+    },
+    {
+        "id": "c42721a1905b1ac8",
+        "type": "mqtt in",
+        "z": "2bf9e411eebbc2c3",
+        "name": "",
+        "topic": "sapura/bilik2/data",
+        "qos": "0",
+        "datatype": "auto-detect",
+        "broker": "f7c9eba65970f8fc",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 380,
+        "y": 580,
+        "wires": [
+            [
+                "bebf2390f254c584",
+                "625a3bbc701c814e"
+            ]
+        ]
+    },
+    {
+        "id": "bebf2390f254c584",
+        "type": "debug",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Bilik 2",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 550,
+        "y": 620,
+        "wires": []
+    },
+    {
+        "id": "625a3bbc701c814e",
+        "type": "influxdb out",
+        "z": "2bf9e411eebbc2c3",
+        "influxdb": "b32bd92e0bc6e902",
+        "name": "",
+        "measurement": "Bilik_2",
+        "precision": "",
+        "retentionPolicy": "",
+        "database": "database",
+        "precisionV18FluxV20": "ms",
+        "retentionPolicyV18Flux": "",
+        "org": "Project IoT Sapura",
+        "bucket": "Collection_Data_Sensor_2",
+        "x": 600,
+        "y": 580,
+        "wires": []
+    },
+    {
+        "id": "8a5242f9816ef767",
+        "type": "inject",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Trigger (10 Saat)",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "10",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 370,
+        "y": 720,
+        "wires": [
+            [
+                "4eac6cac42aa3588"
+            ]
+        ]
+    },
+    {
+        "id": "4eac6cac42aa3588",
+        "type": "function",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Random JSON3",
+        "func": "const minTemp = 19.0;\nconst maxTemp = 21.0;\nconst minHum = 60.0;\nconst maxHum = 65.0;\nconst minLight = 600.0;\nconst maxLight = 610.0;\n\nlet temperature = (Math.random() * (maxTemp - minTemp) + minTemp).toFixed(2);\nlet humidity = (Math.random() * (maxHum - minHum) + minHum).toFixed(2);\nlet lightDensity = (Math.random() * (maxLight - minLight) + minLight).toFixed(2);\n\n// Penting: Kita guna parseFloat() supaya data dihantar sebagai nombor (Float),\n// dan bukannya tulisan (String). InfluxDB sangat sensitif tentang jenis data.\nlet sensorData = {\n    temperature: parseFloat(temperature),\n    humidity: parseFloat(humidity),\n    light_density: parseFloat(lightDensity)\n};\n\n// Node MQTT akan automatik tukarkan objek ini ke JSON String\nreturn { payload: sensorData };",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 580,
+        "y": 720,
+        "wires": [
+            [
+                "06c46d4769999178"
+            ]
+        ]
+    },
+    {
+        "id": "06c46d4769999178",
+        "type": "mqtt out",
+        "z": "2bf9e411eebbc2c3",
+        "name": "",
+        "topic": "sapura/bilik3/data",
+        "qos": "0",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "f7c9eba65970f8fc",
+        "x": 830,
+        "y": 720,
+        "wires": []
+    },
+    {
+        "id": "7bd7c654ca995d3f",
+        "type": "mqtt in",
+        "z": "2bf9e411eebbc2c3",
+        "name": "",
+        "topic": "sapura/bilik3/data",
+        "qos": "0",
+        "datatype": "auto-detect",
+        "broker": "f7c9eba65970f8fc",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 380,
+        "y": 760,
+        "wires": [
+            [
+                "94d0d1664fc410d4",
+                "9364210a0a816c27"
+            ]
+        ]
+    },
+    {
+        "id": "94d0d1664fc410d4",
+        "type": "debug",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Bilik 3",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 550,
+        "y": 800,
+        "wires": []
+    },
+    {
+        "id": "9364210a0a816c27",
+        "type": "influxdb out",
+        "z": "2bf9e411eebbc2c3",
+        "influxdb": "b32bd92e0bc6e902",
+        "name": "",
+        "measurement": "Bilik_3",
+        "precision": "",
+        "retentionPolicy": "",
+        "database": "database",
+        "precisionV18FluxV20": "ms",
+        "retentionPolicyV18Flux": "",
+        "org": "Project IoT Sapura",
+        "bucket": "Collection_Data_Sensor_2",
+        "x": 600,
+        "y": 760,
+        "wires": []
+    },
+    {
+        "id": "58099885fd28f155",
+        "type": "comment",
+        "z": "2bf9e411eebbc2c3",
+        "name": "BILIK 2",
+        "info": "",
+        "x": 330,
+        "y": 480,
+        "wires": []
+    },
+    {
+        "id": "f753c088b45db933",
+        "type": "comment",
+        "z": "2bf9e411eebbc2c3",
+        "name": "BILIK 3",
+        "info": "",
+        "x": 350,
+        "y": 660,
+        "wires": []
+    },
+    {
+        "id": "fa90360dbb87b279",
+        "type": "comment",
+        "z": "2bf9e411eebbc2c3",
+        "name": "BILIK 1",
+        "info": "",
+        "x": 330,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "5594537a9ff8789a",
+        "type": "mqtt out",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Send Override to Dashboard",
+        "topic": "sapura/bilik1/switch/interrupt1",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "f7c9eba65970f8fc",
+        "x": 780,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "b218eda29c9f3e62",
+        "type": "mqtt out",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Send Override:Temperature to Dashboard",
+        "topic": "sapura/bilik1/switch/interrupt2",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "f7c9eba65970f8fc",
+        "x": 1080,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "e43387154c47e4bd",
+        "type": "comment",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Notification Management",
+        "info": "e5wcXpqr_iB1pgDLhhHX-D:APA91bEVLDVF89NwOV9luz4YLpJGaRnKtNaL4VoQhycGqBZWdQTb7MjmzftdapL05AkK65QsAhQZbtrSbFhKM3yx-jG-CdNy2SHyYHsE4OUC-KGmFgZpFIY",
+        "x": 410,
+        "y": 860,
+        "wires": []
+    },
+    {
+        "id": "b64b2e42831d5e52",
+        "type": "firebase-messaging",
+        "z": "2bf9e411eebbc2c3",
+        "name": "",
+        "serviceAccount": "/home/intern_imal/firebase-key.json",
+        "x": 810,
+        "y": 300,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "5648ad7c0b02d5e5",
+        "type": "mqtt in",
+        "z": "2bf9e411eebbc2c3",
+        "name": "",
+        "topic": "sapura/fcm/register",
+        "qos": "0",
+        "datatype": "auto-detect",
+        "broker": "ea9dd93b3d441040",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 510,
+        "y": 960,
+        "wires": [
+            [
+                "combined_fcm_manager"
+            ]
+        ]
+    },
+    {
+        "id": "ee8bdcf7a56eb96c",
+        "type": "inject",
+        "z": "2bf9e411eebbc2c3",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 560,
+        "y": 1020,
+        "wires": [
+            [
+                "0da80df7bbce1c4e"
+            ]
+        ]
+    },
+    {
+        "id": "0da80df7bbce1c4e",
+        "type": "function",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Token Reset",
+        "func": "global.set('fcm_tokens', []); // Kosongkan senarai memori\nnode.warn(\"Semua token lama telah dibersihkan dari memori!\");\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 710,
+        "y": 1020,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "8f2a62445b5baf94",
+        "type": "mqtt in",
+        "z": "2bf9e411eebbc2c3",
+        "name": "",
+        "topic": "sapura/fcm/unregister",
+        "qos": "0",
+        "datatype": "auto-detect",
+        "broker": "ea9dd93b3d441040",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 500,
+        "y": 920,
+        "wires": [
+            [
+                "combined_fcm_manager"
+            ]
+        ]
+    },
+    {
+        "id": "a360dc0e724178c1",
+        "type": "telegram receiver",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Recieve /start",
+        "bot": "8f003ff8c7881b12",
+        "saveDataDir": "",
+        "filterCommands": false,
+        "hasinput": false,
+        "inputs": 0,
+        "handleallupdates": false,
+        "handleprocessupdates": false,
+        "x": 450,
+        "y": 1080,
+        "wires": [
+            [
+                "2134cb2df10e9ec5"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "2134cb2df10e9ec5",
+        "type": "function",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Bot Registration",
+        "func": "let chatId = msg.payload.chatId;\nlet command = msg.payload.content;\nlet subscribers = global.get(\"telegramSubscribers\") || [];\n\nif (command === \"/start\") {\n    if (!subscribers.includes(chatId)) {\n        subscribers.push(chatId);\n        global.set(\"telegramSubscribers\", subscribers);\n    }\n    msg.payload.type = 'message';\n    msg.payload.content = \"Success! You will now receive a high temperature warning notification.\";\n    return msg;\n} \nelse if (command === \"/stop\") {\n    // Buang ID pengguna dari senarai memori Telegram\n    subscribers = subscribers.filter(id => id !== chatId);\n    global.set(\"telegramSubscribers\", subscribers);\n    \n    msg.payload.type = 'message';\n    msg.payload.content = \"Notifications stopped. Type /start to restart.\";\n    return msg;\n}\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 640,
+        "y": 1080,
+        "wires": [
+            [
+                "a2e18e7b9454e0c1"
+            ]
+        ]
+    },
+    {
+        "id": "a2e18e7b9454e0c1",
+        "type": "telegram sender",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Response",
+        "bot": "8f003ff8c7881b12",
+        "haserroroutput": false,
+        "outputs": 1,
+        "x": 820,
+        "y": 1080,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "e0aea24f1d4dd88d",
+        "type": "telegram sender",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Hantar Telegram",
+        "bot": "50a5c311952895d2",
+        "haserroroutput": false,
+        "outputs": 1,
+        "x": 800,
+        "y": 320,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "combined_logic_node",
+        "type": "function",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Switch & LED Logic",
+        "func": "// 1. Simpan dan kemas kini bacaan dalam memori (Context)\nlet temp = context.get('suhu_semasa') || 25.0;\nlet sw = context.get('suis_semasa');\nif (sw === undefined) { sw = 1; }\n\nif (msg.topic === \"sapura/bilik1/temperature\") {\n    temp = parseFloat(msg.payload);\n    context.set('suhu_semasa', temp);\n} else {\n    sw = parseInt(msg.payload);\n    context.set('suis_semasa', sw);\n}\n\n// 2. Tentukan status keperluan kelipan (Rules)\nlet needGreenBlink = (sw === 1 && temp < 27);\nlet needWarningBlink = (temp > 24.5);\nlet anyBlinkNeeded = (needGreenBlink || needWarningBlink);\n\n// SIMPAN STATUS INI SUPAYA JAM RANDIK BOLEH BACA YANG TERKINI\ncontext.set(\"needGreenBlink\", needGreenBlink);\ncontext.set(\"needWarningBlink\", needWarningBlink);\n\n// 3. Status statik\nlet redCmd = (sw === 0 || temp >= 27) ? 1 : 0;\nlet msgInterrupt2 = { payload: (temp >= 27) ? \"0\" : \"1\" };\n\nnode.send([\n    { payload: redCmd },\n    !needGreenBlink ? { payload: 0 } : null,\n    !needWarningBlink ? { payload: 0 } : null,\n    msgInterrupt2\n]);\n\n// 5. Pengurusan Jam Randik\nlet timer = context.get(\"masterTimer\");\nlet isBlinking = context.get(\"isBlinking\") || false;\nlet blinkState = context.get(\"blinkState\") || 0;\n\nif (anyBlinkNeeded) {\n    if (!isBlinking) {\n        isBlinking = true;\n        context.set(\"isBlinking\", isBlinking);\n\n        timer = setInterval(function () {\n            // BACA STATUS TERKINI DARI MEMORI (Membaiki ralat kelipan hijau tidak berhenti)\n            let doGreen = context.get(\"needGreenBlink\");\n            let doWarn = context.get(\"needWarningBlink\");\n\n            blinkState = (blinkState === 0) ? 1 : 0;\n            context.set(\"blinkState\", blinkState);\n\n            let greenOut = doGreen ? { payload: blinkState } : null;\n            let warnOut = doWarn ? { payload: blinkState } : null;\n\n            node.send([null, greenOut, warnOut, null]);\n        }, 500);\n\n        context.set(\"masterTimer\", timer);\n    }\n} else {\n    if (isBlinking) {\n        clearInterval(timer);\n        context.set(\"masterTimer\", null);\n        context.set(\"isBlinking\", false);\n    }\n}\n\nnode.on(\"close\", function () {\n    let activeTimer = context.get(\"masterTimer\");\n    if (activeTimer) {\n        clearInterval(activeTimer);\n        context.set(\"masterTimer\", null);\n        context.set(\"isBlinking\", false);\n    }\n});\n\nreturn null;",
+        "outputs": 4,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 750,
+        "y": 220,
+        "wires": [
+            [
+                "7195150df56b7be3"
+            ],
+            [
+                "0bea7c5b3adc09af"
+            ],
+            [
+                "03b2a422b9512519"
+            ],
+            [
+                "b218eda29c9f3e62"
+            ]
+        ]
+    },
+    {
+        "id": "7429f497e5f9cbc4",
+        "type": "inject",
+        "z": "2bf9e411eebbc2c3",
+        "name": "27.9",
+        "props": [
+            {
+                "p": "topic",
+                "vt": "str"
+            },
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "sapura/bilik1/temperature",
+        "payload": "27.9",
+        "payloadType": "num",
+        "x": 370,
+        "y": 220,
+        "wires": [
+            [
+                "combined_logic_node",
+                "combined_notification_node"
+            ]
+        ]
+    },
+    {
+        "id": "combined_notification_node",
+        "type": "function",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Notification Logic",
+        "func": "let currentTemp = parseFloat(msg.payload);\nlet wasHigh = context.get('wasHigh') || false;\n\n// 1. Logik semakan suhu (Hanya hantar sekali bila suhu naik melepasi 27)\nif (currentTemp > 25) {\n    if (!wasHigh) {\n        context.set('wasHigh', true); // Kunci supaya tak hantar bertubi-tubi\n\n        // --- FIREBASE WEB PUSH (OUTPUT 1) ---\n        let fcmTokens = global.get('fcm_tokens') || [];\n        let firebaseMsgs = null;\n        \n        if (fcmTokens.length > 0) {\n            let tempFirebase = [];\n            for (let i = 0; i < fcmTokens.length; i++) {\n                tempFirebase.push({\n                    payload: {\n                        token: fcmTokens[i],\n                        notification: {\n                            title: \"ALERT!!! HIGH TEMPERATURE\",\n                            body: \"DESIGN ROOM TEMPERATURE IS \" + currentTemp + \"°C. \\nPLEASE DO THE INSPECTION.\"\n                        }\n                    }\n                });\n            }\n            firebaseMsgs = tempFirebase;\n        } else {\n            node.warn(\"No Firebase device is active.\");\n        }\n\n        // --- TELEGRAM BOT (OUTPUT 2) ---\n        let tgSubscribers = global.get(\"telegramSubscribers\") || [];\n        let telegramMsgs = null;\n\n        if (tgSubscribers.length > 0) {\n            let tempTelegram = [];\n            let alertMessage = \"ALERT!!!! HIGH TEMPERATURE \\nDESIGN ROOM TEMPERATURE IS \" + currentTemp + \"°C. \\nPLEASE DO THE INSPECTION.\";\n            \n            for (let i = 0; i < tgSubscribers.length; i++) {\n                tempTelegram.push({\n                    payload: {\n                        chatId: tgSubscribers[i],\n                        type: 'message',\n                        content: alertMessage\n                    }\n                });\n            }\n            telegramMsgs = tempTelegram;\n        }\n\n        // Hantar kedua-duanya serentak melalui Output 1 dan Output 2\n        return [firebaseMsgs, telegramMsgs];\n    } else {\n        // Suhu masih tinggi (dah pernah hantar amaran), abaikan.\n        return null;\n    }\n} else {\n    // Suhu dah kembali normal (< 27). Buka kunci untuk amaran seterusnya.\n    context.set('wasHigh', false);\n    return null;\n}",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 590,
+        "y": 280,
+        "wires": [
+            [
+                "b64b2e42831d5e52"
+            ],
+            [
+                "e0aea24f1d4dd88d"
+            ]
+        ]
+    },
+    {
+        "id": "combined_fcm_manager",
+        "type": "function",
+        "z": "2bf9e411eebbc2c3",
+        "name": "Token Management",
+        "func": "// Ambil senarai token dari memori\nlet tokens = global.get(\"fcm_tokens\") || [];\nlet tokenPayload = msg.payload.toString();\n\nif (!tokenPayload) return null;\n\n// 1. Logik Mendaftar Token Baharu\nif (msg.topic === \"sapura/fcm/register\") {\n    if (tokens.indexOf(tokenPayload) === -1) {\n        tokens.push(tokenPayload);\n        global.set('fcm_tokens', tokens);\n        node.warn(\"FCM Token has been Registered. Current value: \" + tokens.length);\n    }\n}\n// 2. Logik Membuang Token\nelse if (msg.topic === \"sapura/fcm/unregister\") {\n    let saizAsal = tokens.length;\n    tokens = tokens.filter(t => t !== tokenPayload);\n    \n    // Hanya kemas kini jika ada token yang berjaya dibuang\n    if (tokens.length < saizAsal) {\n        global.set(\"fcm_tokens\", tokens);\n        node.warn(\"FCM Token has been removed. Current Value: \" + tokens.length);\n    }\n}\n\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 730,
+        "y": 940,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "f7c9eba65970f8fc",
+        "type": "mqtt-broker",
+        "name": "EMQX Broker",
+        "broker": "127.0.0.1",
+        "port": 1883,
+        "clientid": "Node-RED_Middleware",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "b32bd92e0bc6e902",
+        "type": "influxdb",
+        "hostname": "127.0.0.1",
+        "port": 8086,
+        "protocol": "http",
+        "database": "database",
+        "name": "InfluxDB",
+        "usetls": false,
+        "tls": "",
+        "influxdbVersion": "2.0",
+        "url": "http://10.12.27.21:8086",
+        "timeout": 10,
+        "rejectUnauthorized": true
+    },
+    {
+        "id": "ea9dd93b3d441040",
+        "type": "mqtt-broker",
+        "name": "EMQX Broker (WS)",
+        "broker": "ws://10.12.27.21:8083/mqtt",
+        "port": "8083",
+        "clientid": "Node-RED_Middleware_Websocket",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "8f003ff8c7881b12",
+        "type": "telegram bot",
+        "botname": "dashboardIoT_bot",
+        "usernames": "",
+        "chatids": "",
+        "baseapiurl": "",
+        "testenvironment": false,
+        "updatemode": "polling",
+        "pollinterval": 300,
+        "usesocks": false,
+        "sockshost": "",
+        "socksprotocol": "socks5",
+        "socksport": 6667,
+        "socksusername": "anonymous",
+        "sockspassword": "",
+        "bothost": "",
+        "botpath": "",
+        "localbothost": "0.0.0.0",
+        "localbotport": 8443,
+        "publicbotport": 8443,
+        "privatekey": "",
+        "certificate": "",
+        "useselfsignedcertificate": false,
+        "sslterminated": false,
+        "verboselogging": false
+    },
+    {
+        "id": "50a5c311952895d2",
+        "type": "telegram bot",
+        "botname": "IoTDashboardTesting_bot",
+        "usernames": "",
+        "chatids": "",
+        "baseapiurl": "",
+        "testenvironment": false,
+        "updatemode": "polling",
+        "pollinterval": 300,
+        "usesocks": false,
+        "sockshost": "",
+        "socksprotocol": "socks5",
+        "socksport": 6667,
+        "socksusername": "anonymous",
+        "sockspassword": "",
+        "bothost": "",
+        "botpath": "",
+        "localbothost": "0.0.0.0",
+        "localbotport": 8443,
+        "publicbotport": 8443,
+        "privatekey": "",
+        "certificate": "",
+        "useselfsignedcertificate": false,
+        "sslterminated": false,
+        "verboselogging": false
+    },
+    {
+        "id": "858df65fb4e76726",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-node-pi-gpio": "2.0.7",
+            "node-red-contrib-influxdb": "0.7.0",
+            "node-red-contrib-firebase-messaging-advanced": "1.0.0",
+            "node-red-contrib-telegrambot": "19.0.0"
+        }
+    }
+]

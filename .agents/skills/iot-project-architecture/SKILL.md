@@ -9,13 +9,15 @@ This skill provides a high-level overview of the architectural design, component
 
 ## 1. High-Level Architecture
 
-The project is built as a Single Page Application (SPA) using React 18, Vite, and TypeScript. It interfaces with two main data sources:
+The project is built as a Single Page Application (SPA) using React 18, Vite, and TypeScript. It interfaces with two main data sources, both securely exposed to the internet:
 
-1. **EMQX MQTT Broker (Real-time Data)**: Provides live sensor readings (temperature, humidity, light density) and handles two-way communication for smart switches (with hardware override logic).
-2. **InfluxDB (Historical Data)**: A time-series database providing historical data for charts and tables, queried via an HTTP API (services/api.ts).
+1. **EMQX MQTT Broker (Real-time Data)**: Provides live sensor readings (temperature, humidity, light density) and handles two-way communication for smart switches (with hardware override logic). It is exposed to the internet via a **Cloudflare Tunnel** to allow the web dashboard to connect globally.
+2. **InfluxDB (Historical Data)**: A time-series database providing historical data for charts and tables, queried via an HTTP API (`services/api.ts`). Like the MQTT broker, it is accessed over the internet via a **Cloudflare Tunnel**.
 
-### Middleware
-A Raspberry Pi 4 running **Node-RED** acts as the middleware. It reads physical sensors, publishes to MQTT, and writes to InfluxDB.
+### Hardware & Middleware
+A **Raspberry Pi 4** serves as the core edge device.
+- **Python Scripts**: Used inside the Raspberry Pi to read physical hardware sensors (**DHT11** for temperature/humidity and **LDR** for light density). The Python code reads these values and publishes them directly to the EMQX MQTT broker topics.
+- **Node-RED**: Acts as the middleware and logic orchestrator. It listens to the MQTT broker, writes historical data into InfluxDB, handles the smart switch interrupt logic, and triggers alerts.
 
 ## 2. Component Hierarchy
 
@@ -42,11 +44,16 @@ Managed locally within **`RoomDashboard.tsx`**.
 - Uses a polling interval that scales dynamically based on the selected `timeRange` to optimize performance and reduce backend load (e.g., 1 min for recent data, 5 mins for 7-day data).
 - The InfluxDB queries **must** use `aggregateWindow` (handled in API/backend) to downsample data and prevent browser freezing.
 
-## 4. Authentication & Security
+# 4. Notifications & Alerting
+- **Hybrid Notification System**: Alerts are sent via **Telegram** (for mobile) and **Firebase Cloud Messaging (FCM)** (for desktop web push).
+- **Trigger Logic**: Node-RED monitors the sensor data and automatically triggers these notifications whenever the temperature exceeds **25°C**.
+- **Dashboard Control**: The UI includes a Notification Bell component that acts as a switch, allowing the user to enable or disable receiving these alerts.
+
+## 5. Authentication & Security
 - **Clerk**: Handles all authentication via `@clerk/clerk-react`. The `PUBLISHABLE_KEY` is loaded from `.env`.
 - **Auto-Logout**: Implemented via `hooks/useIdleTimeout.ts`, tracking mouse and keyboard activity, logging out after 1 hour of inactivity.
 
-## 5. File Structure
+## 6. File Structure
 ```
 src/
 ├── components/          # Reusable UI widgets (Charts, Gauges, Tables, Switches)
@@ -60,6 +67,6 @@ src/
 └── firebase-messaging-sw.js # Service Worker for Web Push Notifications
 ```
 
-## 6. Styling approach
+## 7. Styling approach
 - No CSS Modules or Styled Components. Uses standard CSS (`index.css`) with heavily utilized **CSS Variables** (`var(--bg-color)`) to seamlessly switch between Light and Dark themes without React re-renders for styling.
 - Responsive design via CSS Grid and media queries (stacking to 1 column on `< 1024px`).
